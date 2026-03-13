@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Petshop Smart Door</title>
+
+<style>
+body{
+    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+    text-align:center;
+    color:#333;
+
+    /* background petshop */
+    background-image:url("https://images.unsplash.com/photo-1601758228041-f3b2795255f1?auto=format&fit=crop&w=1600&q=80");
+    background-size:cover;
+    background-position:center;
+    background-attachment:fixed;
+}
+
+/* overlay biar jelas */
+body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    background:rgba(255,255,255,0.75);
+    z-index:-1;
+}
+
+h1{
+    background:white;
+    display:inline-block;
+    padding:10px 20px;
+    border-radius:20px;
+    box-shadow:0 4px 10px rgba(0,0,0,0.1);
+}
+
+#webcam-container{
+    margin:20px auto;
+    border:8px solid #fff;
+    border-radius:20px;
+    width:200px;
+    height:200px;
+    overflow:hidden;
+    background:#000;
+}
+
+.shop-container{
+    display:flex;
+    justify-content:center;
+    gap:20px;
+    margin-top:30px;
+    background:rgba(255,255,255,0.85);
+    padding:20px;
+    border-radius:20px;
+    backdrop-filter:blur(5px);
+}
+
+.room{
+    width:180px;
+    height:220px;
+    border:5px solid #bdc3c7;
+    border-radius:15px;
+    background:#95a5a6;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    transition:.4s;
+}
+
+.room::after{
+    content:"TERTUTUP 🔒";
+    font-size:12px;
+    font-weight:bold;
+    color:white;
+    margin-top:10px;
+    background:rgba(0,0,0,.3);
+    padding:2px 8px;
+    border-radius:10px;
+}
+
+.cat-icon{
+    font-size:50px;
+    filter:grayscale(100%);
+    opacity:.3;
+}
+
+.room.active{
+    background:white;
+    transform:scale(1.05);
+    box-shadow:0 10px 20px rgba(0,0,0,.1);
+}
+
+.room.active::after{
+    content:"TERBUKA ✨";
+    background:#2ecc71;
+}
+
+.room.active .cat-icon{
+    filter:none;
+    opacity:1;
+}
+
+#room-oren.active{border-color:#ff9800;background:#fff3e0;}
+#room-putih.active{border-color:#bdc3c7;background:#f8f9fa;}
+#room-hitam.active{border-color:#2c3e50;background:#ecf0f1;}
+
+#status-text{
+    font-weight:bold;
+    font-size:1.2em;
+    color:#e67e22;
+    margin-top:10px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🐱 Petshop Smart Door</h1>
+<p>Arahkan kucing ke kamera. Pintu terbuka jika dikenali!</p>
+
+<div id="webcam-container"></div>
+<div id="status-text">Mencari Kucing...</div>
+
+<div class="shop-container">
+    <div class="room" id="room-oren">
+        <div class="cat-icon">🐈</div>
+        <strong>Oren</strong>
+    </div>
+
+    <div class="room" id="room-putih">
+        <div class="cat-icon">🐈</div>
+        <strong>Putih</strong>
+    </div>
+
+    <div class="room" id="room-hitam">
+        <div class="cat-icon">🐈‍⬛</div>
+        <strong>Hitam</strong>
+    </div>
+</div>
+
+<!-- suara -->
+<audio id="meowSound" src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_9d7a6b4a8c.mp3?filename=cat-meow-85175.mp3"></audio>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+<script>
+const URL="https://teachablemachine.withgoogle.com/models/RQz-SBnUb/";
+
+let model,webcam,maxPredictions;
+let lastDetected=""; // supaya suara ga spam
+
+async function init(){
+    const modelURL=URL+"model.json";
+    const metadataURL=URL+"metadata.json";
+
+    model=await tmImage.load(modelURL,metadataURL);
+    maxPredictions=model.getTotalClasses();
+
+    webcam=new tmImage.Webcam(200,200,true);
+    await webcam.setup();
+    await webcam.play();
+    window.requestAnimationFrame(loop);
+
+    document.getElementById("webcam-container")
+        .appendChild(webcam.canvas);
+}
+
+async function loop(){
+    webcam.update();
+    await predict();
+    window.requestAnimationFrame(loop);
+}
+
+function playMeow(){
+    const sound=document.getElementById("meowSound");
+    sound.currentTime=0;
+    sound.play();
+}
+
+async function predict(){
+    const prediction=await model.predict(webcam.canvas);
+    const statusText=document.getElementById("status-text");
+
+    document.querySelectorAll('.room')
+        .forEach(r=>r.classList.remove('active'));
+
+    let highestProb=0;
+    let bestClass="";
+
+    for(let i=0;i<maxPredictions;i++){
+        if(prediction[i].probability>highestProb){
+            highestProb=prediction[i].probability;
+            bestClass=prediction[i].className.toLowerCase();
+        }
+    }
+
+    if(highestProb>0.85){
+
+        if(bestClass!==lastDetected){
+            playMeow();
+            lastDetected=bestClass;
+        }
+
+        if(bestClass.includes("oren")){
+            document.getElementById("room-oren").classList.add("active");
+            statusText.innerText="🐈 Kucing Oren Masuk!";
+        }
+        else if(bestClass.includes("putih")){
+            document.getElementById("room-putih").classList.add("active");
+            statusText.innerText="🐈 Kucing Putih Masuk!";
+        }
+        else if(bestClass.includes("hitam")){
+            document.getElementById("room-hitam").classList.add("active");
+            statusText.innerText="🐈‍⬛ Kucing Hitam Masuk!";
+        }
+
+    }else{
+        lastDetected="";
+        statusText.innerText="Tidak ada kucing / Tidak dikenali 🔒";
+    }
+}
+
+init();
+</script>
+
+</body>
+</html>
